@@ -1,21 +1,243 @@
 <!doctype html>
 <html lang="ja">
 <head>
-  <meta charset="utf-8"/>
-  <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>BridgeWork</title>
-  <meta name="description" content="BridgeWork — 送り出し機関と人材紹介会社をつなぐ求人共有プラットフォーム" />
-  <link rel="icon" href="data:,">
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>管理ツール</title>
   <!-- Tailwind CDN -->
   <script src="https://cdn.tailwindcss.com"></script>
+  <!-- React / ReactDOM / Babel -->
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+  <script crossorigin src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>html,body{height:100%;}</style>
 </head>
-<body class="min-h-screen bg-gradient-to-b from-slate-50 to-white">
+<body class="bg-white">
   <div id="root"></div>
+  <script type="text/babel">
+    const { useEffect, useMemo, useState } = React;
+    // --- 定義 ---
+    const SSW_FIELDS = [
+      "介護","ビルクリーニング","工業製品製造業","建設","造船・舶用工業","自動車整備","航空","宿泊",
+      "農業","漁業・養殖業","飲食料品製造業","外食業","自動車運送業","鉄道","林業","木材産業"
+    ];
+    const TOP_CATEGORIES = ["技能実習生","特定技能","技人国"];
+    const LS_KEY = "bridgework_jobs_simple_v2";
+    const uid = () => Math.random().toString(36).slice(2) + "-" + Date.now().toString(36);
+    const isValidUrl = (value) => { try{ const u = new URL(value); return ["http:","https:"].includes(u.protocol);}catch{return false;} };
 
-  <!-- React / ReactDOM UMD -->
-  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-  <!-- App code -->
-  <script src="./app.js"></script>
+    function App(){
+      const [mode,setMode] = useState("掲載");
+      const [items,setItems] = useState([]);
+
+      // 掲載フォーム
+      const [cat,setCat] = useState("特定技能");
+      const [title,setTitle] = useState("");
+      const [url,setUrl] = useState("");
+      const [sswOrigin,setSswOrigin] = useState("国内");
+      const [sswField,setSswField] = useState("");
+      const [jobRole,setJobRole] = useState("");
+
+      // 閲覧
+      const [qCat,setQCat] = useState("すべて");
+      const [qOrigin,setQOrigin] = useState("すべて");
+      const [qField,setQField] = useState("すべて");
+      const [qText,setQText] = useState("");
+
+      // データ永続化
+      useEffect(()=>{ try{ const raw = localStorage.getItem(LS_KEY); if(raw) setItems(JSON.parse(raw)); } catch(e){ console.error(e);} },[]);
+      useEffect(()=>{ try{ localStorage.setItem(LS_KEY, JSON.stringify(items)); } catch(e){ console.error(e);} },[items]);
+
+      // バリデーション
+      const canSubmit = useMemo(()=>{
+        if(!isValidUrl(url)) return false;
+        if(cat === "特定技能") return !!sswField;
+        return !!jobRole.trim();
+      }, [url,cat,sswField,jobRole]);
+
+      // 登録
+      const submit = ()=>{
+        if(!canSubmit) return;
+        const roleName = (cat === "特定技能") ? String(sswField) : jobRole.trim();
+        const sameRoleCount = items.filter(x=>{
+          if(x.カテゴリ !== cat) return false;
+          if(cat === "特定技能") return x.分野 === sswField;
+          return (x.職種 || "") === roleName;
+        }).length;
+        const seq = sameRoleCount + 1;
+
+        const item = {
+          id: uid(),
+          作成日時: new Date().toISOString(),
+          カテゴリ: cat,
+          タイトル: title.trim() || undefined,
+          URL: url.trim(),
+          採用区分: (cat === "特定技能") ? sswOrigin : undefined,
+          分野: (cat === "特定技能") ? sswField : undefined,
+          職種: (cat !== "特定技能") ? roleName : undefined,
+          連番: seq,
+        };
+        setItems(prev => [item, ...prev]);
+        setTitle(""); setUrl(""); setJobRole("");
+      };
+
+      // 検索
+      const filtered = useMemo(()=>{
+        return items.filter(x=>{
+          if(qCat !== "すべて" && x.カテゴリ !== qCat) return false;
+          if(qCat === "特定技能"){
+            if(qOrigin !== "すべて" && x.採用区分 && x.採用区分 !== qOrigin) return false;
+            if(qField !== "すべて" && x.分野 && x.分野 !== qField) return false;
+          }
+          const role = x.カテゴリ === "特定技能" ? (x.分野 || "") : (x.職種 || "");
+          const t = ((x.タイトル || "") + " " + role + " " + (x.採用区分 || "") + " " + x.URL).toLowerCase();
+          const q = qText.trim().toLowerCase();
+          return q ? t.includes(q) : true;
+        });
+      }, [items,qCat,qOrigin,qField,qText]);
+
+      return (
+        <div className="min-h-screen bg-white text-slate-900">
+          <header className="sticky top-0 z-10 border-b bg-white">
+            <div className="max-w-4xl mx-auto px-4 py-2 flex items-center gap-2">
+              <div className="text-lg font-semibold">管理ツール</div>
+              <div className="ml-auto flex items-center gap-2">
+                <button onClick={()=>setMode("掲載")} className={`px-3 py-1.5 rounded-lg border text-sm ${mode==="掲載"?"bg-slate-900 text-white":"bg-white"}`}>掲載</button>
+                <button onClick={()=>setMode("閲覧")} className={`px-3 py-1.5 rounded-lg border text-sm ${mode==="閲覧"?"bg-slate-900 text-white":"bg-white"}`}>閲覧</button>
+              </div>
+            </div>
+          </header>
+
+          <main className="max-w-4xl mx-auto p-4 grid gap-4">
+            {mode === "掲載" ? (
+              <section className="border rounded-xl p-4">
+                <div className="flex flex-wrap items-center gap-3">
+                  <Select label="カテゴリ" value={cat} onChange={setCat}>
+                    {TOP_CATEGORIES.map(c => (<option key={c} value={c}>{c}</option>))}
+                  </Select>
+
+                  {cat === "特定技能" ? (
+                    <>
+                      <RadioGroup label="採用区分" value={sswOrigin} onChange={setSswOrigin} options={["国内","国外"]} />
+                      <Select label="16分野" value={sswField} onChange={setSswField}>
+                        <option value="">未選択</option>
+                        {SSW_FIELDS.map(f => (<option key={f} value={f}>{f}</option>))}
+                      </Select>
+                    </>
+                  ) : (
+                    <Input label="職種（必須）" value={jobRole} onChange={setJobRole} placeholder="例：型枠大工 / 回路設計 など" />
+                  )}
+
+                  <div className="w-full grid md:grid-cols-2 gap-3 mt-2">
+                    <Input label="タイトル（任意）" value={title} onChange={setTitle} placeholder="未入力ならURLを表示" />
+                    <Input label="URL（必須）" value={url} onChange={setUrl} placeholder="https://..." error={url && !isValidUrl(url) ? "URL形式が不正" : undefined} />
+                  </div>
+
+                  <div className="w-full mt-3">
+                    <button onClick={submit} disabled={!canSubmit} className={`px-5 py-2 rounded-lg border ${canSubmit?"bg-slate-900 text-white":"bg-slate-100 text-slate-400 cursor-not-allowed"}`}>登録</button>
+                  </div>
+                </div>
+              </section>
+            ) : (
+              <section className="border rounded-xl p-4">
+                <div className="flex flex-wrap items-center gap-3">
+                  <Select label="カテゴリ" value={qCat} onChange={setQCat}>
+                    <option value="すべて">すべて</option>
+                    {TOP_CATEGORIES.map(c => (<option key={c} value={c}>{c}</option>))}
+                  </Select>
+                  {qCat === "特定技能" && (
+                    <>
+                      <Select label="採用区分" value={qOrigin} onChange={setQOrigin}>
+                        <option value="すべて">すべて</option>
+                        <option value="国内">国内</option>
+                        <option value="国外">国外</option>
+                      </Select>
+                      <Select label="16分野" value={qField} onChange={setQField}>
+                        <option value="すべて">すべて</option>
+                        {SSW_FIELDS.map(f => (<option key={f} value={f}>{f}</option>))}
+                      </Select>
+                    </>
+                  )}
+                  <Input label="キーワード" value={qText} onChange={setQText} placeholder="タイトル / 分野 / 職種 / URL" />
+                </div>
+              </section>
+            )}
+
+            {/* 一覧 */}
+            <section className="grid gap-2">
+              {filtered.map(it => (
+                <div key={it.id} className="border rounded-xl p-3 flex items-start gap-3 bg-white">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 text-xs text-slate-600">
+                      <span className="px-2 py-0.5 rounded-full border bg-slate-50">{it.カテゴリ}</span>
+                      {it.カテゴリ === "特定技能" ? (
+                        <>
+                          {it.採用区分 && <span className="px-2 py-0.5 rounded-full border bg-slate-50">{it.採用区分}</span>}
+                          {it.分野 && <span className="px-2 py-0.5 rounded-full border bg-slate-50">{it.分野}</span>}
+                          {typeof it.連番 === "number" && <span className="px-2 py-0.5 rounded-full border bg-slate-50">#{String(it.連番).padStart(3,"0")}</span>}
+                        </>
+                      ) : (
+                        <>
+                          {it.職種 && <span className="px-2 py-0.5 rounded-full border bg-slate-50">{it.職種}</span>}
+                          {typeof it.連番 === "number" && <span className="px-2 py-0.5 rounded-full border bg-slate-50">#{String(it.連番).padStart(3,"0")}</span>}
+                        </>
+                      )}
+                    </div>
+                    <div className="mt-1 text-base font-medium break-words">
+                      <button className="underline" onClick={()=>window.open(it.URL, "_blank")}>{it.タイトル || it.URL}</button>
+                    </div>
+                    <div className="text-[11px] text-slate-500 mt-1">{new Date(it.作成日時).toLocaleString()}</div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button onClick={()=>setItems(prev=>prev.filter(x=>x.id!==it.id))} className="px-3 py-1.5 rounded-lg border">削除</button>
+                  </div>
+                </div>
+              ))}
+              {filtered.length === 0 && (
+                <div className="text-center text-sm text-slate-500 py-10 border rounded-xl">該当する求人はありません</div>
+              )}
+            </section>
+          </main>
+        </div>
+      );
+    }
+
+    function Input({label, value, onChange, placeholder, error}){
+      return (
+        <label className="block text-sm">
+          <span className="text-slate-600">{label}</span>
+          <input value={value} onChange={(e)=>onChange(e.target.value)} placeholder={placeholder}
+            className={`mt-1 w-full border rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-slate-300 ${error?"border-rose-300":""}`} />
+          {error && <div className="text-xs text-rose-600 mt-1">{error}</div>}
+        </label>
+      );
+    }
+
+    function Select({label, value, onChange, children}){
+      return (
+        <label className="flex items-center gap-2 text-sm">
+          <span className="text-slate-600 whitespace-nowrap">{label}</span>
+          <select value={value} onChange={(e)=>onChange(e.target.value)} className="border rounded-lg px-3 py-2 bg-white">
+            {children}
+          </select>
+        </label>
+      );
+    }
+
+    function RadioGroup({label, value, onChange, options}){
+      return (
+        <div className="flex items-center gap-2 text-sm">
+          <span className="text-slate-600">{label}</span>
+          {options.map(o => (
+            <label key={o} className="flex items-center gap-1">
+              <input type="radio" name={label} checked={value===o} onChange={()=>onChange(o)} />{o}
+            </label>
+          ))}
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+  </script>
 </body>
 </html>
